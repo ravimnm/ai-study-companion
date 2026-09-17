@@ -1,0 +1,25 @@
+fastapi
+uvicorn[standard]
+python-multipart
+
+pydantic
+pydantic-settings
+email-validator
+
+pymongo
+
+python-jose
+bcrypt
+
+python-dotenv
+
+pypdf
+reportlab
+
+httpx
+
+numpy
+
+# AI provider and local embeddings
+groq
+sentence-transformers
