@@ -1,4 +1,5 @@
-﻿import { createContext, useEffect, useState } from "react";
+
+import { createContext, useEffect, useState } from "react";
 import {
   getCurrentUser,
   login,
@@ -15,53 +16,85 @@ export const AuthContext = createContext(null);
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [authError, setAuthError] = useState(false);
 
   useEffect(() => {
-    const token = getToken();
+    let cancelled = false;
 
-    if (!token) {
-      setLoading(false);
-      return;
+    async function initializeAuth() {
+      const token = getToken();
+
+      if (!token) {
+        setLoading(false);
+        return;
+      }
+
+      try {
+        const currentUser = await getCurrentUser();
+
+        if (!cancelled) {
+          setUser(currentUser);
+          setAuthError(false);
+        }
+      } catch (error) {
+        if (cancelled) return;
+
+        // Remove the token only when the API explicitly
+        // reports that the token is invalid or expired.
+        const status =
+          error?.response?.status ??
+          error?.status;
+
+        if (status === 401) {
+          removeToken();
+          setUser(null);
+        } else {
+          // Preserve the token on network/server errors.
+          setAuthError(true);
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
     }
 
-    getCurrentUser()
-      .then((currentUser) => {
-        setUser(currentUser);
-      })
-      .catch(() => {
-        removeToken();
-        setUser(null);
-      })
-      .finally(() => {
-        setLoading(false);
-      });
+    initializeAuth();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   async function signIn(credentials) {
     const result = await login(credentials);
-
     const token = result?.access_token || result?.token;
 
     if (!token) {
-      throw new Error("Login succeeded but no access token was returned.");
+      throw new Error(
+        "Login succeeded but no access token was returned."
+      );
     }
 
     setToken(token);
 
-    if (result?.user) {
-      setUser(result.user);
-      return result.user;
+    try {
+      const currentUser =
+        result?.user || await getCurrentUser();
+
+      setUser(currentUser);
+      setAuthError(false);
+      return currentUser;
+    } catch (error) {
+      // Do not leave a partially established login behind.
+      removeToken();
+      setUser(null);
+      throw error;
     }
-
-    const currentUser = await getCurrentUser();
-    setUser(currentUser);
-
-    return currentUser;
   }
 
   async function signUp(data) {
     const result = await register(data);
-
     const token = result?.access_token || result?.token;
 
     if (token) {
@@ -69,6 +102,7 @@ export function AuthProvider({ children }) {
 
       if (result?.user) {
         setUser(result.user);
+        setAuthError(false);
         return result.user;
       }
     }
@@ -82,6 +116,7 @@ export function AuthProvider({ children }) {
   function signOut() {
     removeToken();
     setUser(null);
+    setAuthError(false);
   }
 
   return (
@@ -89,6 +124,7 @@ export function AuthProvider({ children }) {
       value={{
         user,
         loading,
+        authError,
         signIn,
         signUp,
         signOut,
